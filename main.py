@@ -2,44 +2,42 @@
 This example demonstrates most basic operations with single model
 and a Table definition generation with comment support
 """
-from tortoise import Tortoise, fields, run_async
-from models.model import Event, Tournament, Team
-from tortoise.query_utils import Prefetch
+from tortoise import Tortoise, run_async
+from tortoise.exceptions import OperationalError
+from tortoise.transactions import atomic, in_transaction
+from models.model import Event
 
 
 async def run():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["__main__"]})
     await Tortoise.generate_schemas()
 
-    tournament = await Tournament.create(name="tournament")
-    await Event.create(name="First", tournament=tournament)
-    await Event.create(name="Second", tournament=tournament)
-    tournament_with_filtered = (
-        await Tournament.all()
-        .prefetch_related(Prefetch("events", queryset=Event.filter(name="First")))
-        .first()
-    )
-    print(tournament_with_filtered)
-    print(await Tournament.first().prefetch_related("events"))
+    try:
+        async with in_transaction() as connection:
+            event = Event(name="Test")
+            await event.save(using_db=connection)
+            await Event.filter(id=event.id).using_db(connection).update(name="Updated name")
+            saved_event = await Event.filter(name="Updated name").using_db(connection).first()
+            await connection.execute_query("SELECT * FROM non_existent_table")
+    except OperationalError as ex:
+        print(ex)
+    saved_event = await Event.filter(name="Updated name").first()
+    print(saved_event)
 
-    tournament_with_filtered_to_attr = (
-        await Tournament.all()
-        .prefetch_related(
-            Prefetch(
-                "events",
-                queryset=Event.filter(name="First"),
-                to_attr="to_attr_events_first",
-            ),
-            Prefetch(
-                "events",
-                queryset=Event.filter(name="Second"),
-                to_attr="to_attr_events_second",
-            ),
-        )
-        .first()
-    )
-    print(tournament_with_filtered_to_attr.to_attr_events_first)
-    print(tournament_with_filtered_to_attr.to_attr_events_second)
+    @atomic()
+    async def bound_to_fall():
+        event = await Event.create(name="Test")
+        await Event.filter(id=event.id).update(name="Updated name")
+        saved_event = await Event.filter(name="Updated name").first()
+        print(saved_event.name)
+        raise OperationalError('opps! something went wrong.')
+
+    try:
+        await bound_to_fall()
+    except OperationalError as ex:
+        print(ex)
+    saved_event = await Event.filter(name="Updated name").first()
+    print(saved_event)
 
 
 if __name__ == "__main__":
