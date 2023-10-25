@@ -1,42 +1,34 @@
-from tortoise import Tortoise, fields
-from tortoise.models import Model
-
+from tortoise import Model, fields
 
 class Tournament(Model):
     id = fields.IntField(pk=True)
     name = fields.TextField()
 
+    events: fields.ReverseRelation["Event"]
+
     def __str__(self):
         return self.name
-
-    class Meta:
-        app = "tournaments"
 
 
 class Event(Model):
     id = fields.IntField(pk=True)
     name = fields.TextField()
-    tournament_id = fields.IntField()
-    # Here we make link to events.Team, not models.Team
+    tournament: fields.ForeignKeyRelation[Tournament] = fields.ForeignKeyField(
+        "models.Tournament", related_name="events"
+    )
     participants: fields.ManyToManyRelation["Team"] = fields.ManyToManyField(
-        "events.Team", related_name="events", through="event_team"
+        "models.Team", related_name="events", through="event_team"
     )
 
     def __str__(self):
         return self.name
-
-    class Meta:
-        app = "events"
 
 
 class Team(Model):
     id = fields.IntField(pk=True)
     name = fields.TextField()
 
-    event_team: fields.ManyToManyRelation[Event]
+    events: fields.ManyToManyRelation[Event]
 
     def __str__(self):
         return self.name
-
-    class Meta:
-        app = "events"
