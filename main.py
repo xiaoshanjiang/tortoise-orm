@@ -1,82 +1,48 @@
 """
-This example shows how relations between models work.
+This example shows how relations between models especially unique field work.
 
-Key points in this example are use of ForeignKeyField and ManyToManyField
-to declare relations and use of .prefetch_related() and .fetch_related()
-to get this related objects
+Key points in this example are use of ForeignKeyField and OneToOneField has to_field.
+For other basic parts, it is the same as relation example.
 """
 from tortoise import Tortoise, run_async
-from tortoise.exceptions import NoValuesFetched
+from tortoise.query_utils import Prefetch
 
-from app_models.sports import Address, Event, Team, Tournament
+from app_models.school import Principal, School, Student
 
 
 async def run():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["__main__"]})
     await Tortoise.generate_schemas()
 
-    tournament = Tournament(name="New Tournament")
-    await tournament.save()
-    await Event(name="Without participants", tournament_id=tournament.id).save()
-    event = Event(name="Test", tournament_id=tournament.id)
-    await event.save()
+    school1 = await School.create(id=1024, name="School1")
+    student1 = await Student.create(name="Sang-Heon Jeon1", school_id=school1.id)
 
-    await Address.create(city="Santa Monica", street="Ocean", event=event)
+    student_schools = await Student.filter(name="Sang-Heon Jeon1").values("name", "school__name")
+    print(student_schools[0])
 
-    participants = []
-    for i in range(2):
-        team = Team(name=f"Team {(i + 1)}")
-        await team.save()
-        participants.append(team)
-    await event.participants.add(participants[0], participants[1])
-    await event.participants.add(participants[0], participants[1])
-
-    try:
-        for team in event.participants:
-            print(team.id)
-    except NoValuesFetched:
-        pass
-
-    async for team in event.participants:
-        print(team.id)
-
-    for team in event.participants:
-        print(team.id)
-
-    print(
-        await Event.filter(participants=participants[0].id).prefetch_related(
-            "participants", "tournament"
-        )
+    await Student.create(name="Sang-Heon Jeon2", school=school1)
+    school_with_filtered = (
+        await School.all()
+        .prefetch_related(Prefetch("students", queryset=Student.filter(name="Sang-Heon Jeon1")))
+        .first()
     )
-    print(await participants[0].fetch_related("events"))
+    school_without_filtered = await School.first().prefetch_related("students")
+    print(len(school_with_filtered.students))
+    print(len(school_without_filtered.students))
 
-    print(await Team.fetch_for_list(participants, "events"))
+    school2 = await School.create(id=2048, name="School2")
+    await Student.all().update(school=school2)
+    student = await Student.first()
+    print(student.school_id)
 
-    print(await Team.filter(events__tournament__id=tournament.id))
+    await Student.filter(id=student1.id).update(school=school1)
+    schools = await School.all().order_by("students__name")
+    print([school.name for school in schools])
 
-    print(await Event.filter(tournament=tournament))
-
-    print(
-        await Tournament.filter(events__name__in=["Test", "Prod"])
-        .order_by("-events__participants__name")
-        .distinct()
-    )
-
-    print(
-        await Event.filter(id=event.id).values(
-            "id", "name", tournament="tournament__name"
-        )
-    )
-
-    print(await Event.filter(id=event.id).values_list("id", "participants__name"))
-
-    print(await Address.filter(event=event).first())
-
-    event_reload1 = await Event.filter(id=event.id).first()
-    print(await event_reload1.address)
-
-    event_reload2 = await Event.filter(id=event.id).prefetch_related("address").first()
-    print(event_reload2.address)
+    fetched_principal = await Principal.create(name="Sang-Heon Jeon3", school=school1)
+    print(fetched_principal.name)
+    fetched_school = await School.filter(name="School1").prefetch_related("principal").first()
+    print(fetched_school.name)
 
 
 if __name__ == "__main__":
