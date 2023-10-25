@@ -1,5 +1,6 @@
 """
 This example demonstrates most basic operations with single model
+and a Table definition generation with comment support
 """
 from tortoise import Tortoise, fields, run_async
 from models.model import Event
