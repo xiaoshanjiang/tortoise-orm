@@ -7,3 +7,4 @@ tortoise-orm[accel]
 mypy
 isort
 black
+pylint
