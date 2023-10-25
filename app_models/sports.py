@@ -1,5 +1,6 @@
 from tortoise import Model, fields
 
+
 class Tournament(Model):
     id = fields.IntField(pk=True)
     name = fields.TextField()
@@ -22,6 +23,21 @@ class Event(Model):
 
     def __str__(self):
         return self.name
+
+
+class Address(Model):
+    city = fields.CharField(max_length=64)
+    street = fields.CharField(max_length=128)
+
+    event: fields.OneToOneRelation[Event] = fields.OneToOneField(
+        "models.Event",
+        on_delete=fields.OnDelete.CASCADE,
+        related_name="address",
+        pk=True,
+    )
+
+    def __str__(self):
+        return f"Address({self.city}, {self.street})"
 
 
 class Team(Model):
