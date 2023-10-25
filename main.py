@@ -1,64 +1,88 @@
-from tortoise import Tortoise, fields, run_async
-from tortoise.expressions import Q
-from tortoise.functions import Coalesce, Count, Length, Lower, Min, Sum, Trim, Upper
-from models.sports import Event, Team, Tournament
+from tortoise import Tortoise, run_async
+from tortoise.functions import Avg, Count, Sum
 
+from models.books import Author, Book
 
 
 async def run():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["__main__"]})
     await Tortoise.generate_schemas()
 
-    tournament = await Tournament.create(name="New Tournament", desc="great")
-    await tournament.save()
+    a1 = await Author.create(name="author1")
+    a2 = await Author.create(name="author2")
+    for i in range(10):
+        await Book.create(name=f"book{i}", author=a1, rating=i)
+    for i in range(5):
+        await Book.create(name=f"book{i}", author=a2, rating=i)
 
-    await Tournament.create(name="Second tournament")
-    await Tournament.create(name=" final tournament ")
-
-    await Event(name="Without participants", tournament_id=tournament.id).save()
-
-    event = Event(name="Test", tournament_id=tournament.id)
-    await event.save()
-
-    participants = []
-    for i in range(2):
-        team = Team(name=f"Team {(i + 1)}")
-        await team.save()
-        participants.append(team)
-    await event.participants.add(participants[0], participants[1])
-    await event.participants.add(participants[0], participants[1])
-
-    print(await Tournament.all().annotate(events_count=Count("events")).filter(events_count__gte=1))
-    print(
-        await Tournament.all()
-        .annotate(events_count_with_filter=Count("events", _filter=Q(name="New Tournament")))
-        .filter(events_count_with_filter__gte=1)
+    ret = (
+        await Book.annotate(count=Count("id"))
+        .group_by("author_id")
+        .values("author_id", "count")
     )
+    print(ret)
+    # >>> [{'author_id': 1, 'count': 10}, {'author_id': 2, 'count': 5}]
 
-    print(await Event.filter(id=event.id).first().annotate(lowest_team_id=Min("participants__id")))
-
-    print(await Tournament.all().annotate(events_count=Count("events")).order_by("events_count"))
-
-    print(await Event.all().annotate(tournament_test_id=Sum("tournament__id")).first())
-
-    print(
-        await Tournament.annotate(clean_description=Coalesce("desc", "")).filter(
-            clean_description=""
-        )
+    ret = (
+        await Book.annotate(count=Count("id"))
+        .filter(count__gt=6)
+        .group_by("author_id")
+        .values("author_id", "count")
     )
+    print(ret)
+    # >>> [{'author_id': 1, 'count': 10}]
 
-    print(
-        await Tournament.annotate(trimmed_name=Trim("name")).filter(trimmed_name="final tournament")
+    ret = (
+        await Book.annotate(sum=Sum("rating"))
+        .group_by("author_id")
+        .values("author_id", "sum")
     )
+    print(ret)
+    # >>> [{'author_id': 1, 'sum': 45.0}, {'author_id': 2, 'sum': 10.0}]
 
-    print(
-        await Tournament.annotate(name_len=Length("name")).filter(
-            name_len__gt=len("New Tournament")
-        )
+    ret = (
+        await Book.annotate(sum=Sum("rating"))
+        .filter(sum__gt=11)
+        .group_by("author_id")
+        .values("author_id", "sum")
     )
+    print(ret)
+    # >>> [{'author_id': 1, 'sum': 45.0}]
 
-    print(await Tournament.annotate(name_lo=Lower("name")).filter(name_lo="new tournament"))
-    print(await Tournament.annotate(name_lo=Upper("name")).filter(name_lo="NEW TOURNAMENT"))
+    ret = (
+        await Book.annotate(avg=Avg("rating"))
+        .group_by("author_id")
+        .values("author_id", "avg")
+    )
+    print(ret)
+    # >>> [{'author_id': 1, 'avg': 4.5}, {'author_id': 2, 'avg': 2.0}]
+
+    ret = (
+        await Book.annotate(avg=Avg("rating"))
+        .filter(avg__gt=3)
+        .group_by("author_id")
+        .values("author_id", "avg")
+    )
+    print(ret)
+    # >>> [{'author_id': 1, 'avg': 4.5}]
+
+    # and use .values_list()
+    ret = (
+        await Book.annotate(count=Count("id"))
+        .group_by("author_id")
+        .values_list("author_id", "count")
+    )
+    print(ret)
+    # >>> [(1, 10), (2, 5)]
+
+    # group by with join
+    ret = (
+        await Book.annotate(count=Count("id"))
+        .group_by("author__name")
+        .values("author__name", "count")
+    )
+    print(ret)
+    # >>> [{"author__name": "author1", "count": 10}, {"author__name": "author2", "count": 5}]
 
 
 if __name__ == "__main__":
