@@ -5,44 +5,37 @@ Key points in this example are use of ForeignKeyField and OneToOneField has to_f
 For other basic parts, it is the same as relation example.
 """
 from tortoise import Tortoise, run_async
-from tortoise.query_utils import Prefetch
 
-from app_models.school import Principal, School, Student
+from app_models.employees import Employee
 
 
 async def run():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["__main__"]})
     await Tortoise.generate_schemas()
 
-    school1 = await School.create(id=1024, name="School1")
-    student1 = await Student.create(name="Sang-Heon Jeon1", school_id=school1.id)
+    root = await Employee.create(name="Root")
+    loose = await Employee.create(name="Loose")
+    _1 = await Employee.create(name="1. First H1", manager=root)
+    _2 = await Employee.create(name="2. Second H1", manager=root)
+    _1_1 = await Employee.create(name="1.1. First H2", manager=_1)
+    _1_1_1 = await Employee.create(name="1.1.1. First H3", manager=_1_1)
+    _2_1 = await Employee.create(name="2.1. Second H2", manager=_2)
+    _2_2 = await Employee.create(name="2.2. Third H2", manager=_2)
 
-    student_schools = await Student.filter(name="Sang-Heon Jeon1").values("name", "school__name")
-    print(student_schools[0])
+    await _1.talks_to.add(_2, _1_1_1, loose)
+    await _2_1.gets_talked_to.add(_2_2, _1_1, loose)
 
-    await Student.create(name="Sang-Heon Jeon2", school=school1)
-    school_with_filtered = (
-        await School.all()
-        .prefetch_related(Prefetch("students", queryset=Student.filter(name="Sang-Heon Jeon1")))
-        .first()
-    )
-    school_without_filtered = await School.first().prefetch_related("students")
-    print(len(school_with_filtered.students))
-    print(len(school_without_filtered.students))
+    # Evaluated off creation objects
+    print(await loose.full_hierarchy__fetch_related())
+    print(await root.full_hierarchy__async_for())
+    print(await root.full_hierarchy__fetch_related())
 
-    school2 = await School.create(id=2048, name="School2")
-    await Student.all().update(school=school2)
-    student = await Student.first()
-    print(student.school_id)
-
-    await Student.filter(id=student1.id).update(school=school1)
-    schools = await School.all().order_by("students__name")
-    print([school.name for school in schools])
-
-    fetched_principal = await Principal.create(name="Sang-Heon Jeon3", school=school1)
-    print(fetched_principal.name)
-    fetched_school = await School.filter(name="School1").prefetch_related("principal").first()
-    print(fetched_school.name)
+    # Evaluated off new objects → Result is identical
+    root2 = await Employee.get(name="Root")
+    loose2 = await Employee.get(name="Loose")
+    print(await loose2.full_hierarchy__fetch_related())
+    print(await root2.full_hierarchy__async_for())
+    print(await root2.full_hierarchy__fetch_related())
 
 
 if __name__ == "__main__":
