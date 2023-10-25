@@ -1,45 +1,51 @@
 """
-This example demonstrates executing manual SQL queries
+This example to use router to implement read/write separation
 """
-from tortoise import Tortoise, connections, fields, run_async
+from typing import Type
+
+from tortoise import Tortoise, fields, run_async
 from tortoise.models import Model
-from tortoise.transactions import in_transaction
 
 
 class Event(Model):
     id = fields.IntField(pk=True)
     name = fields.TextField()
-    timestamp = fields.DatetimeField(auto_now_add=True)
+    datetime = fields.DatetimeField(null=True)
+
+    class Meta:
+        table = "event"
+
+    def __str__(self):
+        return self.name
+
+
+class Router:
+    def db_for_read(self, model: Type[Model]):
+        return "slave"
+
+    def db_for_write(self, model: Type[Model]):
+        return "master"
 
 
 async def run():
-    await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["__main__"]})
+    config = {
+        "connections": {"master": "sqlite:///tmp/test.db", "slave": "sqlite:///tmp/test.db"},
+        "apps": {
+            "models": {
+                "models": ["__main__"],
+                "default_connection": "master",
+            }
+        },
+        "routers": ["__main__.Router"],
+        "use_tz": False,
+        "timezone": "UTC",
+    }
+    await Tortoise.init(config=config)
     await Tortoise.generate_schemas()
-
-    # Need to get a connection. Unless explicitly specified, the name should be 'default'
-    conn = connections.get("default")
-
-    # Now we can execute queries in the normal autocommit mode
-    await conn.execute_query("INSERT INTO event (name) VALUES ('Foo')")
-
-    # You can also you parameters, but you need to use the right param strings for each dialect
-    await conn.execute_query("INSERT INTO event (name) VALUES (?)", ["Bar"])
-
-    # To do a transaction you'd need to use the in_transaction context manager
-    async with in_transaction("default") as tconn:
-        await tconn.execute_query("INSERT INTO event (name) VALUES ('Moo')")
-        # Unless an exception happens it should commit automatically
-
-    # This transaction is rolled back
-    async with in_transaction("default") as tconn:
-        await tconn.execute_query("INSERT INTO event (name) VALUES ('Sheep')")
-        # Rollback to fail transaction
-        await tconn.rollback()
-
-    # Consider using execute_query_dict to get return values as a dict
-    val = await conn.execute_query_dict("SELECT * FROM event")
-    print(val)
-    # Note that the result doesn't contain the rolled-back "Sheep" entry.
+    # this will use connection master
+    event = await Event.create(name="Test")
+    # this will use connection slave
+    await Event.get(pk=event.pk)
 
 
 if __name__ == "__main__":
