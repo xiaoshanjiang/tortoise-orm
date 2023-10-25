@@ -1,0 +1,6 @@
+tortoise-orm
+tortoise-orm[asyncmy]
+tortoise-orm[accel]
+mypy
+isort
+black
