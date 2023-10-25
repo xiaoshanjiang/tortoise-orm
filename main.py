@@ -1,43 +1,64 @@
-"""
-This example demonstrates most basic operations with single model
-and a Table definition generation with comment support
-"""
-from tortoise import Tortoise, run_async
-from tortoise.exceptions import OperationalError
-from tortoise.transactions import atomic, in_transaction
-from models.model import Event
+from tortoise import Tortoise, fields, run_async
+from tortoise.expressions import Q
+from tortoise.functions import Coalesce, Count, Length, Lower, Min, Sum, Trim, Upper
+from models.sports import Event, Team, Tournament
+
 
 
 async def run():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["__main__"]})
     await Tortoise.generate_schemas()
 
-    try:
-        async with in_transaction() as connection:
-            event = Event(name="Test")
-            await event.save(using_db=connection)
-            await Event.filter(id=event.id).using_db(connection).update(name="Updated name")
-            saved_event = await Event.filter(name="Updated name").using_db(connection).first()
-            await connection.execute_query("SELECT * FROM non_existent_table")
-    except OperationalError as ex:
-        print(ex)
-    saved_event = await Event.filter(name="Updated name").first()
-    print(saved_event)
+    tournament = await Tournament.create(name="New Tournament", desc="great")
+    await tournament.save()
 
-    @atomic()
-    async def bound_to_fall():
-        event = await Event.create(name="Test")
-        await Event.filter(id=event.id).update(name="Updated name")
-        saved_event = await Event.filter(name="Updated name").first()
-        print(saved_event.name)
-        raise OperationalError('opps! something went wrong.')
+    await Tournament.create(name="Second tournament")
+    await Tournament.create(name=" final tournament ")
 
-    try:
-        await bound_to_fall()
-    except OperationalError as ex:
-        print(ex)
-    saved_event = await Event.filter(name="Updated name").first()
-    print(saved_event)
+    await Event(name="Without participants", tournament_id=tournament.id).save()
+
+    event = Event(name="Test", tournament_id=tournament.id)
+    await event.save()
+
+    participants = []
+    for i in range(2):
+        team = Team(name=f"Team {(i + 1)}")
+        await team.save()
+        participants.append(team)
+    await event.participants.add(participants[0], participants[1])
+    await event.participants.add(participants[0], participants[1])
+
+    print(await Tournament.all().annotate(events_count=Count("events")).filter(events_count__gte=1))
+    print(
+        await Tournament.all()
+        .annotate(events_count_with_filter=Count("events", _filter=Q(name="New Tournament")))
+        .filter(events_count_with_filter__gte=1)
+    )
+
+    print(await Event.filter(id=event.id).first().annotate(lowest_team_id=Min("participants__id")))
+
+    print(await Tournament.all().annotate(events_count=Count("events")).order_by("events_count"))
+
+    print(await Event.all().annotate(tournament_test_id=Sum("tournament__id")).first())
+
+    print(
+        await Tournament.annotate(clean_description=Coalesce("desc", "")).filter(
+            clean_description=""
+        )
+    )
+
+    print(
+        await Tournament.annotate(trimmed_name=Trim("name")).filter(trimmed_name="final tournament")
+    )
+
+    print(
+        await Tournament.annotate(name_len=Length("name")).filter(
+            name_len__gt=len("New Tournament")
+        )
+    )
+
+    print(await Tournament.annotate(name_lo=Lower("name")).filter(name_lo="new tournament"))
+    print(await Tournament.annotate(name_lo=Upper("name")).filter(name_lo="NEW TOURNAMENT"))
 
 
 if __name__ == "__main__":
