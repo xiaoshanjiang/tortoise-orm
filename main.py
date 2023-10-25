@@ -1,29 +1,68 @@
-from tortoise import Tortoise, run_async
+"""
+This example demonstrates model signals usage
+"""
+from typing import List, Optional, Type
 
-from app_models.enums import Currency, EnumFields, Service
+from tortoise import BaseDBAsyncClient, Tortoise, fields, run_async
+from tortoise.models import Model
+from tortoise.signals import post_delete, post_save, pre_delete, pre_save
+
+
+class Signal(Model):
+    id = fields.IntField(pk=True)
+    name = fields.TextField()
+
+    class Meta:
+        table = "signal"
+
+    def __str__(self):
+        return self.name
+
+
+@pre_save(Signal)
+async def signal_pre_save(
+    sender: "Type[Signal]", instance: Signal, using_db, update_fields
+) -> None:
+    print(sender, instance, using_db, update_fields)
+
+
+@post_save(Signal)
+async def signal_post_save(
+    sender: "Type[Signal]",
+    instance: Signal,
+    created: bool,
+    using_db: "Optional[BaseDBAsyncClient]",
+    update_fields: List[str],
+) -> None:
+    print(sender, instance, using_db, created, update_fields)
+
+
+@pre_delete(Signal)
+async def signal_pre_delete(
+    sender: "Type[Signal]", instance: Signal, using_db: "Optional[BaseDBAsyncClient]"
+) -> None:
+    print(sender, instance, using_db)
+
+
+@post_delete(Signal)
+async def signal_post_delete(
+    sender: "Type[Signal]", instance: Signal, using_db: "Optional[BaseDBAsyncClient]"
+) -> None:
+    print(sender, instance, using_db)
 
 
 async def run():
     await Tortoise.init(db_url="sqlite://:memory:", modules={"models": ["__main__"]})
     await Tortoise.generate_schemas()
+    # pre_save,post_save will be send
+    signal = await Signal.create(name="Signal")
+    signal.name = "Signal_Save"
 
-    obj0 = await EnumFields.create(
-        service=Service.python_programming, currency=Currency.USD
-    )
-    # also you can use valid int and str value directly
-    await EnumFields.create(service=1, currency="USD")
+    # pre_save,post_save will be send
+    await signal.save(update_fields=["name"])
 
-    try:
-        # invalid enum value will raise ValueError
-        await EnumFields.create(service=4, currency="XXX")
-    except ValueError:
-        print("Value is invalid")
-
-    await EnumFields.filter(pk=obj0.pk).update(
-        service=Service.database_design, currency=Currency.HUF
-    )
-    # also you can use valid int and str value directly
-    await EnumFields.filter(pk=obj0.pk).update(service=2, currency="HUF")
+    # pre_delete,post_delete will be send
+    await signal.delete()
 
 
 if __name__ == "__main__":
